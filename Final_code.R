@@ -2,6 +2,8 @@
 ###########################
 library("openxlsx")
 library("ggplot2")
+library("GGally")
+library("gridExtra")
 library("dplyr")
 library("multcomp")
 library("nnet")
@@ -23,7 +25,19 @@ str(row_data)
 
 # EDA
 ###########################
-
+unique_class <- unique(row_data[, target])
+one_column <- numerical_features[16]
+for (one_class in unique_class){
+  print(one_class)
+  select_class_value <- row_data %>% filter(Class == one_class)
+  select_class_value <- select_class_value[, one_column]
+  max_value <- max(select_class_value, na.rm = TRUE)
+  min_value <- min(select_class_value, na.rm = TRUE)
+  median_value <- median(select_class_value, na.rm = TRUE)
+  print(max_value)
+  print(min_value)
+  print(median_value)
+}
 
 ###########################
 
@@ -34,6 +48,7 @@ str(row_data)
 target <- "Class"
 all_columns <- colnames(row_data)
 numerical_features <- all_columns[which(all_columns != target)]
+unique_class <- unique(row_data[, target])
 
 ###########################
 
@@ -43,40 +58,47 @@ row_data[, target] <- as.factor(row_data[, target])
 
 ###########################
 
-# Handle Outliers - 把 Outliers 轉換成 missing data
+# Handle Outliers - 使用 Box plot 概念排除掉 Outliers 後重新定義新的資料
 ###########################
+preprocess_outlier_data <- row_data
+
+detect_outlier_via_boxplot <- function(input_data){
+  Q3_value <- quantile(input_data, 3 / 4)
+  Q1_value <- quantile(input_data, 1 / 4)
+  IQR_value <- Q3_value - Q1_value
+  lower_bound <- Q1_value - 1.5 * IQR_value
+  upper_bound <- Q3_value + 1.5 * IQR_value
+  return (c(lower_bound, upper_bound))
+}
 
 
+Q3_value <- quantile(row_data[, one_column], 3 / 4)
+Q1_value <- quantile(row_data[, one_column], 1 / 4)
+IQR_value <- Q3_value - Q1_value
+lower_bound <- Q1_value - 1.5 * IQR_value
+
+# one_column <- numerical_features[1]
+for (one_column in numerical_features){
+  lower_upper_bound <- detect_outlier_via_boxplot(row_data[, one_column])
+  preprocess_outlier_data[, one_column] <- ifelse(lower_upper_bound[1] > row_data[, one_column] | row_data[, one_column] > lower_upper_bound[2], NA, row_data[, one_column])
+}
 
 ###########################
 
 
 ## Descriptive Statistics
 ###########################
-unique_class <- unique(row_data[, target])
 
-# 1. 建立第一列表示出每個類別名稱
-first_colunm_names <- c("")
-for (one_column in unique_class){
-  first_colunm_names <- c(first_colunm_names, 
-                          paste(one_column, " (n = ", 
-                                as.character( dim(row_data %>% filter(Class == one_column))[1] ), ")", sep = ""))
-}
-first_colunm_names <- c(first_colunm_names, "p-value")
-
-# 2. 定義「mean (sd)」的欄位名稱
-second_column_names <- c("", rep("mean (sd)", length(unique_class)), "")
-
-# 3. 把每個變數的欄位、平均數、標準差與檢定結果變成一個 Row
+# 把每個變數的欄位、平均數、標準差與檢定結果變成一個 Row
 content_column <- vector(mode = "list", length = length(unique_class)+1)
 names(content_column) <- c("Column Name", unique_class)
 
 for (one_column in numerical_features){
   for (one_class in unique_class){
-    select_class_value <- row_data %>% filter(Class == one_class)
+    select_class_value <- preprocess_outlier_data %>% filter(Class == one_class)
     select_class_value <- select_class_value[, one_column]
-    mean_value <- mean(select_class_value)
-    sd_value <- sd(select_class_value)
+    mean_value <- mean(select_class_value, na.rm = TRUE)
+    sd_value <- sd(select_class_value, na.rm = TRUE)
     content_column[[one_class]] <- c(content_column[[one_class]], 
                                    paste(round(mean_value, 4), " (", round(sd_value, 4), ")", sep = ""))
   }
@@ -84,7 +106,7 @@ for (one_column in numerical_features){
 }
 
 content_column <- data.frame(content_column)
-write.csv(content_column, "Descriptive_Statistics.csv")
+write.csv(content_column, "preprocess_outlier_Descriptive_Statistics.csv")
 ###########################
 
 ## Plot
@@ -101,8 +123,8 @@ for (one_column in numerical_features){
 }
 
 # 繪製主要變數之間的散佈圖
-par(mfrow = c(1, 1))
-plot(row_data[, c("Area", "Perimeter", "MajorAxisLength", "MinorAxisLength", "Eccentricity", "ConvexArea")])
+ggpairs(row_data[, c("Area", "Perimeter", "MajorAxisLength", "MinorAxisLength", "Eccentricity", "ConvexArea")],
+        mapping = aes(color = row_data[, "Class"]))
 
 # 繪製每個變數各別在七種類別之間的Boxplot
 one_column <- numerical_features[1]
@@ -138,8 +160,19 @@ plot(post_test)
 # Correlation
 ###########################
 
+content_column <- vector(mode = "list", length = length(numerical_features)+1)
+names(content_column) <- c("Column_Name", numerical_features)
 
+for (one_column in numerical_features){
+  content_column[["Column_Name"]] <- c(content_column[["Column_Name"]], one_column)
+  for (two_column in numerical_features){
+    corr_value <- cor(row_data[, c(one_column, two_column)])[one_column, two_column]
+    content_column[[one_column]] <- c(content_column[[one_column]], corr_value)
+  }
+}
 
+content_column <- data.frame(content_column)
+write.csv(content_column, "row_report//Pearson_Correlation.csv")
 ###########################
 
 

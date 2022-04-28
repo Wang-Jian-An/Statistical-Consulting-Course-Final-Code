@@ -176,16 +176,28 @@ write.csv(content_column, "row_report//Pearson_Correlation.csv")
 ###########################
 
 
-# Logistic Regression
+# Multinomial Logistic Regression
 ###########################
+# 建立 Column Name 在 List 的標頭
+result_list <- vector(mode = "list", length = length(unique_class)+1)
+names(result_list) <- c("Column_Name", unique_class)
+for (one_class in unique_class){
+  result_list[[one_class]] <- vector(mode = "list", length = 4)
+  names(result_list[[one_class]]) <- c("Coefficient (Stderr)", "Odds", "95% CI", "p-value")
+}
 
-
+one_column <- numerical_features[1]
+model_formula <- as.formula(paste(target, "~", one_column))
+model <- multinom(formula = model_formula, data = row_data)
+ctable <- data.frame(summary(model)$coefficients)
+ctable[, "Stderr"] <- summary(model)$standard.errors[, "Area"]
+ctable[, "Odds"] <- exp(ctable[, "Area"])
+lower_coef <- ctable[, "Area"] - qnorm(0.975) * ctable[, "Stderr"]
+upper_coef <- ctable[, "Area"] + qnorm(0.975) * ctable[, "Stderr"]
+ctable[, "lower_bound"] <- exp(lower_coef)
+ctable[, "upper_bound"] <- exp(upper_coef)
+ctable[, "zvalue"] <- ctable[, "Area"] / ctable[, "Stderr"]
+ctable[, "p-value"] <- (1 - pnorm(abs(ctable[, "zvalue"]), 0, 1)) * 2
 
 
 ###########################
-
-
-
-
-
-

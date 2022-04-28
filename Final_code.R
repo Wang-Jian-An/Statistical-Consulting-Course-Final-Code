@@ -178,6 +178,8 @@ write.csv(content_column, "row_report//Pearson_Correlation.csv")
 
 # Multinomial Logistic Regression
 ###########################
+unique_class <- unique_class[c(3, 1, 2, 4, 5, 6, 7)]
+
 # 建立 Column Name 在 List 的標頭
 result_list <- vector(mode = "list", length = length(unique_class)+1)
 names(result_list) <- c("Column_Name", unique_class)
@@ -186,18 +188,34 @@ for (one_class in unique_class){
   names(result_list[[one_class]]) <- c("Coefficient (Stderr)", "Odds", "95% CI", "p-value")
 }
 
-one_column <- numerical_features[1]
-model_formula <- as.formula(paste(target, "~", one_column))
-model <- multinom(formula = model_formula, data = row_data)
-ctable <- data.frame(summary(model)$coefficients)
-ctable[, "Stderr"] <- summary(model)$standard.errors[, "Area"]
-ctable[, "Odds"] <- exp(ctable[, "Area"])
-lower_coef <- ctable[, "Area"] - qnorm(0.975) * ctable[, "Stderr"]
-upper_coef <- ctable[, "Area"] + qnorm(0.975) * ctable[, "Stderr"]
-ctable[, "lower_bound"] <- exp(lower_coef)
-ctable[, "upper_bound"] <- exp(upper_coef)
-ctable[, "zvalue"] <- ctable[, "Area"] / ctable[, "Stderr"]
-ctable[, "p-value"] <- (1 - pnorm(abs(ctable[, "zvalue"]), 0, 1)) * 2
-
+row_data[, target] <- relevel(row_data[, target], ref = "BOMBAY")
+# one_column <- numerical_features[1]
+for (one_column in numerical_features){
+  model_formula <- as.formula(paste(target, "~", one_column))
+  model <- multinom(formula = model_formula, data = row_data)
+  ctable <- data.frame(summary(model)$coefficients)
+  ctable[, "Stderr"] <- summary(model)$standard.errors[, "Area"]
+  ctable[, "Odds"] <- exp(ctable[, "Area"])
+  lower_coef <- ctable[, "Area"] - qnorm(0.975) * ctable[, "Stderr"]
+  upper_coef <- ctable[, "Area"] + qnorm(0.975) * ctable[, "Stderr"]
+  ctable[, "lower_bound"] <- exp(lower_coef)
+  ctable[, "upper_bound"] <- exp(upper_coef)
+  ctable[, "zvalue"] <- ctable[, "Area"] / ctable[, "Stderr"]
+  ctable[, "p-value"] <- (1 - pnorm(abs(ctable[, "zvalue"]), 0, 1)) * 2
+  
+  for (one_result in c("Coefficient (Stderr)", "Odds", "95% CI", "p-value")){
+    result_list[[unique_class[1]]][[one_result]] <- c(result_list[[unique_class[1]]][[one_result]], "ref")
+  }
+  
+  for (one_class in unique_class[2:7]){
+    result_list[[one_class]][["Coefficient (Stderr)"]] <- c(result_list[[one_class]][["Coefficient (Stderr)"]], ctable[one_class, one_column])
+    result_list[[one_class]][["Odds"]] <- c(result_list[[one_class]][["Odds"]], ctable[one_class, "Odds"])
+    result_list[[one_class]][["95% CI"]] <- c(result_list[[one_class]][["95% CI"]],
+                                              paste("[", round(ctable[one_class, "lower_bound"], 4), " ,", round(ctable[one_class, "upper_bound"], 4), "]", sep = ""))
+    result_list[[one_class]][["p-value"]] <- c(result_list[[one_class]][["p-value"]], ctable[one_class, "p-value"])
+  }
+  
+  result_list[["Column_Name"]] <- c(result_list[["Column_Name"]], one_column)
+}
 
 ###########################

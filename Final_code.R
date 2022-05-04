@@ -3,14 +3,14 @@
 library("openxlsx")
 library("ggplot2")
 library("GGally")
-library("gridExtra")
 library("dplyr")
 library("multcomp")
 library("nnet")
+library("h2o") # AutoML
 ###########################
 
 # Set path
-setwd("D://OneDrive - gs.ncku.edu.tw//1102èª²ç¨‹//çµ±è¨ˆè«®è©¢")
+setwd("D://OneDrive - gs.ncku.edu.tw//1102½Òµ{//²Î­p¿Ô¸ß")
 
 # Load Data
 ###########################
@@ -46,19 +46,19 @@ for (one_class in unique_class){
 # Define Features
 ###########################
 target <- "Class"
+target_BOMBAY_or_not <- "BOMBAY_or_not"
 all_columns <- colnames(row_data)
 numerical_features <- all_columns[which(all_columns != target)]
 unique_class <- unique(row_data[, target])
-
 ###########################
 
 # Preprocessing
 ###########################
 row_data[, target] <- as.factor(row_data[, target])
-
+row_data[, "BOMBAY_or_not"] <- ifelse()
 ###########################
 
-# Handle Outliers - ä½¿ç”¨ Box plot æ¦‚å¿µæŽ’é™¤æŽ‰ Outliers å¾Œé‡æ–°å®šç¾©æ–°çš„è³‡æ–™
+# Handle Outliers - ¨Ï¥Î Box plot ·§©À±Æ°£±¼ Outliers «á­«·s©w¸q·sªº¸ê®Æ
 ###########################
 preprocess_outlier_data <- row_data
 
@@ -89,7 +89,7 @@ for (one_column in numerical_features){
 ## Descriptive Statistics
 ###########################
 
-# æŠŠæ¯å€‹è®Šæ•¸çš„æ¬„ä½ã€å¹³å‡æ•¸ã€æ¨™æº–å·®èˆ‡æª¢å®šçµæžœè®Šæˆä¸€å€‹ Row
+# §â¨C­ÓÅÜ¼ÆªºÄæ¦ì¡B¥­§¡¼Æ¡B¼Ð·Ç®t»PÀË©wµ²ªGÅÜ¦¨¤@­Ó Row
 content_column <- vector(mode = "list", length = length(unique_class)+1)
 names(content_column) <- c("Column Name", unique_class)
 
@@ -100,7 +100,7 @@ for (one_column in numerical_features){
     mean_value <- mean(select_class_value, na.rm = TRUE)
     sd_value <- sd(select_class_value, na.rm = TRUE)
     content_column[[one_class]] <- c(content_column[[one_class]], 
-                                   paste(round(mean_value, 4), " (", round(sd_value, 4), ")", sep = ""))
+                                     paste(round(mean_value, 4), " (", round(sd_value, 4), ")", sep = ""))
   }
   content_column[["Column Name"]] <- c(content_column[["Column Name"]], one_column)
 }
@@ -111,7 +111,7 @@ write.csv(content_column, "preprocess_outlier_Descriptive_Statistics.csv")
 
 ## Plot
 ###########################
-# ç¹ªè£½æ¯å€‹è®Šæ•¸çš„ Histogram
+# Ã¸»s¨C­ÓÅÜ¼Æªº Histogram
 one_column <- numerical_features[1]
 for (one_column in numerical_features){
   temp_plot <- ggplot(mapping = aes(x = row_data[, one_column])) +
@@ -122,11 +122,11 @@ for (one_column in numerical_features){
   ggsave(temp_plot, file = paste("histogram//histogram_", one_column, ".png", sep = ""))
 }
 
-# ç¹ªè£½ä¸»è¦è®Šæ•¸ä¹‹é–“çš„æ•£ä½ˆåœ–
+# Ã¸»s¥D­nÅÜ¼Æ¤§¶¡ªº´²§G¹Ï
 ggpairs(row_data[, c("Area", "Perimeter", "MajorAxisLength", "MinorAxisLength", "Eccentricity", "ConvexArea")],
         mapping = aes(color = row_data[, "Class"]))
 
-# ç¹ªè£½æ¯å€‹è®Šæ•¸å„åˆ¥åœ¨ä¸ƒç¨®é¡žåˆ¥ä¹‹é–“çš„Boxplot
+# Ã¸»s¨C­ÓÅÜ¼Æ¦U§O¦b¤CºØÃþ§O¤§¶¡ªºBoxplot
 one_column <- numerical_features[1]
 for (one_column in numerical_features){
   temp_plot <- ggplot(mapping = aes(x = row_data[, target], y = row_data[, one_column])) +
@@ -180,7 +180,7 @@ write.csv(content_column, "row_report//Pearson_Correlation.csv")
 ###########################
 unique_class <- unique_class[c(3, 1, 2, 4, 5, 6, 7)]
 
-# å»ºç«‹ Column Name åœ¨ List çš„æ¨™é ­
+# «Ø¥ß Column Name ¦b List ªº¼ÐÀY
 result_list <- vector(mode = "list", length = length(unique_class)+1)
 names(result_list) <- c("Column_Name", unique_class)
 for (one_class in unique_class){
@@ -217,5 +217,49 @@ for (one_column in numerical_features){
   
   result_list[["Column_Name"]] <- c(result_list[["Column_Name"]], one_column)
 }
+###########################
+
+# PCA
+###########################
+# Covariance
+cov_numerical_features <- cov(row_data[, numerical_features])
+cov_pca_result <- prcomp(cov_numerical_features)
+plot(cov_pca_result, type = "line")
+summary(cov_pca_result)
+cov_pca_result$rotation
+
+# Correlation
+cor_numerical_features <- cor(row_data[, numerical_features])
+cor_pca_result <- prcomp(cor_numerical_features)
+plot(cor_pca_result)
+summary(cor_pca_result)
+###########################
+
+# Data Transformation via PCA
+###########################
+
 
 ###########################
+
+# Data Split
+###########################
+
+
+###########################
+
+# AutoML via h2o
+###########################
+
+
+
+###########################
+
+# Mixed Model
+###########################
+
+
+
+
+###########################
+
+

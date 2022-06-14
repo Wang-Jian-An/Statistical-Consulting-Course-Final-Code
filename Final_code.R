@@ -6,7 +6,11 @@ library("GGally")
 library("dplyr")
 library("multcomp")
 library("nnet")
-library("h2o") # AutoML
+library("lares") # AutoML
+library("caret")
+library("mixtools") # Use Mixture Model with EM Algorithm
+library("UBL") # SMOTE
+library("MASS")
 ###########################
 
 # Set path
@@ -41,8 +45,6 @@ for (one_class in unique_class){
 
 ###########################
 
-# Preprocessing
-
 # Define Features
 ###########################
 target <- "Class"
@@ -55,41 +57,10 @@ unique_class <- unique(row_data[, target])
 # Preprocessing
 ###########################
 row_data[, target] <- as.factor(row_data[, target])
-row_data[, "BOMBAY_or_not"] <- ifelse()
 ###########################
-
-# Handle Outliers - 使用 Box plot 概念排除掉 Outliers 後重新定義新的資料
-###########################
-preprocess_outlier_data <- row_data
-
-detect_outlier_via_boxplot <- function(input_data){
-  Q3_value <- quantile(input_data, 3 / 4)
-  Q1_value <- quantile(input_data, 1 / 4)
-  IQR_value <- Q3_value - Q1_value
-  lower_bound <- Q1_value - 1.5 * IQR_value
-  upper_bound <- Q3_value + 1.5 * IQR_value
-  return (c(lower_bound, upper_bound))
-}
-
-
-Q3_value <- quantile(row_data[, one_column], 3 / 4)
-Q1_value <- quantile(row_data[, one_column], 1 / 4)
-IQR_value <- Q3_value - Q1_value
-lower_bound <- Q1_value - 1.5 * IQR_value
-
-# one_column <- numerical_features[1]
-for (one_column in numerical_features){
-  lower_upper_bound <- detect_outlier_via_boxplot(row_data[, one_column])
-  preprocess_outlier_data[, one_column] <- ifelse(lower_upper_bound[1] > row_data[, one_column] | row_data[, one_column] > lower_upper_bound[2], NA, row_data[, one_column])
-}
-
-###########################
-
 
 ## Descriptive Statistics
 ###########################
-
-# 把每個變數的欄位、平均數、標準差與檢定結果變成一個 Row
 content_column <- vector(mode = "list", length = length(unique_class)+1)
 names(content_column) <- c("Column Name", unique_class)
 
@@ -111,7 +82,7 @@ write.csv(content_column, "preprocess_outlier_Descriptive_Statistics.csv")
 
 ## Plot
 ###########################
-# 繪製每個變數的 Histogram
+# 
 one_column <- numerical_features[1]
 for (one_column in numerical_features){
   temp_plot <- ggplot(mapping = aes(x = row_data[, one_column])) +
@@ -122,11 +93,11 @@ for (one_column in numerical_features){
   ggsave(temp_plot, file = paste("histogram//histogram_", one_column, ".png", sep = ""))
 }
 
-# 繪製主要變數之間的散佈圖
+# 
 ggpairs(row_data[, c("Area", "Perimeter", "MajorAxisLength", "MinorAxisLength", "Eccentricity", "ConvexArea")],
         mapping = aes(color = row_data[, "Class"]))
 
-# 繪製每個變數各別在七種類別之間的Boxplot
+# 
 one_column <- numerical_features[1]
 for (one_column in numerical_features){
   temp_plot <- ggplot(mapping = aes(x = row_data[, target], y = row_data[, one_column])) +
@@ -154,12 +125,10 @@ KW_model
 post_test <- TukeyHSD(aov_model)
 post_test$Class
 plot(post_test)
-
 ###########################
 
 # Correlation
 ###########################
-
 content_column <- vector(mode = "list", length = length(numerical_features)+1)
 names(content_column) <- c("Column_Name", numerical_features)
 
@@ -180,7 +149,7 @@ write.csv(content_column, "row_report//Pearson_Correlation.csv")
 ###########################
 unique_class <- unique_class[c(3, 1, 2, 4, 5, 6, 7)]
 
-# 建立 Column Name 在 List 的標頭
+# 
 result_list <- vector(mode = "list", length = length(unique_class)+1)
 names(result_list) <- c("Column_Name", unique_class)
 for (one_class in unique_class){
@@ -235,31 +204,205 @@ plot(cor_pca_result)
 summary(cor_pca_result)
 ###########################
 
-# Data Transformation via PCA
+# Plot with Mixture Models
+###########################
+draw_mixture_model_plot_1d_2 <- function(mixture_model,
+                                       one_column){
+  comp.norm <- c()
+  for (one_k in 1:2){
+    comp.norm <- cbind(comp.norm, rnorm(n = 1000, 
+                                        mean = mixture_model$mu[one_k],
+                                        sd = mixture_model$sigma[one_k]))
+  }
+  ggplot(mapping = aes(x = row_data[, one_column]))+
+    geom_histogram(mapping = aes(y = ..density..))+
+    geom_density(alpha = .2, color = "black", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 1]), color = "red", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 2]), color = "green", lwd = 1.5)+
+    scale_x_continuous(one_column)+
+    ggtitle(paste("The Mixture Model Result of", one_column, "with K = 2"))
+  ggsave(paste("MixtureModelPlot//", one_column, "_1D_K=2.png", sep = ""))
+}
+
+draw_mixture_model_plot_1d_3 <- function(mixture_model,
+                                         one_column){
+  comp.norm <- c()
+  for (one_k in 1:3){
+    comp.norm <- cbind(comp.norm, rnorm(n = 1000, 
+                                        mean = mixture_model$mu[one_k],
+                                        sd = mixture_model$sigma[one_k]))
+  }
+  ggplot(mapping = aes(x = row_data[, one_column]))+
+    geom_histogram(mapping = aes(y = ..density..))+
+    geom_density(alpha = .2, color = "black", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 1]), color = "red", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 2]), color = "green", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 3]), color = "blue", lwd = 1.5)+
+    scale_x_continuous(one_column)+
+    ggtitle(paste("The Mixture Model Result of", one_column, "with K = 3"))
+  ggsave(paste("MixtureModelPlot//", one_column, "_1D_K=3.png", sep = ""))
+}
+
+draw_mixture_model_plot_1d_4 <- function(mixture_model,
+                                         one_column){
+  comp.norm <- c()
+  for (one_k in 1:4){
+    comp.norm <- cbind(comp.norm, rnorm(n = 1000, 
+                                        mean = mixture_model$mu[one_k],
+                                        sd = mixture_model$sigma[one_k]))
+  }
+  ggplot(mapping = aes(x = row_data[, one_column]))+
+    geom_histogram(mapping = aes(y = ..density..))+
+    geom_density(alpha = .2, color = "black", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 1]), color = "red", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 2]), color = "green", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 3]), color = "blue", lwd = 1.5)+
+    geom_density(mapping = aes(x = comp.norm[, 4]), color = "purple", lwd = 1.5)+
+    scale_x_continuous(one_column)+
+    ggtitle(paste("The Mixture Model Result of", one_column, "with K = 4"))
+  ggsave(paste("MixtureModelPlot//", one_column, "_1D_K=4.png", sep = ""))
+}
+
+draw_mixture_model_plot_2d_2 <- function(mixture_model,
+                                       two_column){
+  comp.norm <- vector(mode = "list", length = 0)
+  for (one_k in 1:2){
+    comp.norm[[one_k]] <- mvrnorm(n = 1000, 
+                                  mu = gm$mu[[one_k]], 
+                                  Sigma = gm$sigma[[one_k]])
+  }
+  ggplot()+
+    geom_density_2d(mapping = aes(x = row_data[, two_column[1]],
+                                  y = row_data[, two_column[2]]), 
+                    color = "black")+
+    geom_density_2d(mapping = aes(x = unlist(comp.norm[[1]][, 1]),
+                                  y = unlist(comp.norm[[1]][, 2])), 
+                    color = "red")+
+    geom_density_2d(mapping = aes(x = unlist(comp.norm[[2]][, 1]),
+                                  y = unlist(comp.norm[[2]][, 2])), 
+                    color = "green")+
+    scale_x_continuous(two_column[1])+
+    scale_y_continuous(two_column[2])
+    ggtitle(paste("The Mixture Model Result of", paste(two_column[1], two_column[2], sep = "-"), "with K = 2"))
+  ggsave(paste("MixtureModelPlot//", paste(two_column[1], two_column[2], sep = "-"), "_2D_K=2.png", sep = ""))
+}
+
+draw_mixture_model_plot_2d_3 <- function(mixture_model,
+                                         two_column){
+  comp.norm <- vector(mode = "list", length = 0)
+  for (one_k in 1:3){
+    comp.norm[[one_k]] <- mvrnorm(n = 1000, 
+                                  mu = gm$mu[[one_k]], 
+                                  Sigma = gm$sigma[[one_k]])
+  }
+  ggplot()+
+    geom_density_2d(mapping = aes(x = row_data[, two_column[1]],
+                                  y = row_data[, two_column[2]]), 
+                    color = "black")+
+    geom_density_2d(mapping = aes(x = unlist(comp.norm[[1]][, 1]),
+                                  y = unlist(comp.norm[[1]][, 2])), 
+                    color = "red")+
+    geom_density_2d(mapping = aes(x = unlist(comp.norm[[2]][, 1]),
+                                  y = unlist(comp.norm[[2]][, 2])), 
+                    color = "green")+
+    geom_density_2d(mapping = aes(x = unlist(comp.norm[[3]][, 1]),
+                                  y = unlist(comp.norm[[3]][, 2])), 
+                    color = "green")
+    scale_x_continuous(two_column[1])+
+    scale_y_continuous(two_column[2])
+  ggtitle(paste("The Mixture Model Result of", paste(two_column[1], two_column[2], sep = "-"), "with K = 3"))
+  ggsave(paste("MixtureModelPlot//", paste(two_column[1], two_column[2], sep = "-"), "_2D_K=3.png", sep = ""))
+}
 ###########################
 
-
+# Mixture Model via mixtools
 ###########################
 
-# Data Split
+gm <- mvnormalmixEM(x = row_data[, numerical_features[1:2]], 
+                  k = 2, 
+                  maxit = 100000)
+plot.mixEM(gm, whichplots = 2)
+draw_mixture_model_plot_2d_2(mixture_model = gm,
+                             two_column = numerical_features[1:2])
+
+# Mixture Model for 1D
+mixture_model_result_2 <- vector(mode = "list", length = 0)
+mixture_model_result_3 <- vector(mode = "list", length = 0)
+mixture_model_result_4 <- vector(mode = "list", length = 0)
+for (one_numerical_feature in numerical_features){
+  print(paste("Start for", one_numerical_feature, "K = 2"))
+  gm <- normalmixEM(x = row_data[, one_numerical_feature], 
+                    k = 2, 
+                    maxit = 100000)
+  draw_mixture_model_plot_1d_2(mixture_model = gm,
+                             one_column = one_numerical_feature)
+  mixture_model_result_2[[one_numerical_feature]] <- 
+    c(gm$mu[1], gm$sigma[1], gm$lambda[1], gm$mu[2], gm$sigma[2], gm$lambda[2])
+  
+  print(paste("Start for", one_numerical_feature, "K = 3"))
+  gm <- normalmixEM(x = row_data[, one_numerical_feature], 
+                    k = 3, 
+                    maxit = 100000)
+  draw_mixture_model_plot_1d_3(mixture_model = gm,
+                             one_column = one_numerical_feature)
+  mixture_model_result_3[[one_numerical_feature]] <- 
+    c(gm$mu[1], gm$sigma[1], gm$lambda[1], 
+      gm$mu[2], gm$sigma[2], gm$lambda[2],
+      gm$mu[3], gm$sigma[3], gm$lambda[3])
+  
+  print(paste("Start for", one_numerical_feature, "K = 4"))
+  gm <- normalmixEM(x = row_data[, one_numerical_feature], 
+                    k = 4, 
+                    maxit = 100000)
+  draw_mixture_model_plot_1d_4(mixture_model = gm,
+                             one_column = one_numerical_feature)
+  mixture_model_result_4[[one_numerical_feature]] <- 
+    c(gm$mu[1], gm$sigma[1], gm$lambda[1], 
+      gm$mu[2], gm$sigma[2], gm$lambda[2],
+      gm$mu[3], gm$sigma[3], gm$lambda[3],
+      gm$mu[4], gm$sigma[4], gm$lambda[4])
+}
+
+# Mixture Model for 2D
+mixture_model_result_2D_2 <- vector(mode = "list", length = 0)
+mixture_model_result_2D_3 <- vector(mode = "list", length = 0)
+mixture_model_result_2D_4 <- vector(mode = "list", length = 0)
+for (one_numerical_feature in numerical_features){
+  for (two_numerical_feature in numerical_features){
+    if (one_numerical_feature != two_numerical_feature){
+      print(paste("Start for", paste(one_numerical_feature, two_numerical_feature, sep = "-"), "K = 2"))
+      ErrorResult <- tryCatch({
+        gm <- mvnormalmixEM(x = row_data[, c(one_numerical_feature, two_numerical_feature)],
+                            k = 2,
+                            maxit = 100000)
+
+        draw_mixture_model_plot_2d_2(mixture_model = gm,
+                                     two_column = c(one_numerical_feature, two_numerical_feature))
+        mixture_model_result_2D_2[[paste(one_numerical_feature, two_numerical_feature, sep = "-")]] <-
+          c(gm$mu[[1]][1], gm$mu[[1]][2], gm$sigma[[1]][1], gm$sigma[[1]][2], gm$lambda[1],
+            gm$mu[[2]][1], gm$mu[[2]][2], gm$sigma[[2]][1], gm$sigma[[2]][2], gm$lambda[2])
+      }, error = function(err){
+        print(paste(paste(one_numerical_feature, two_numerical_feature, sep = "-"), "is Error"))
+      })
+      
+      print(paste("Start for", paste(one_numerical_feature, two_numerical_feature, sep = "-"), "K = 3"))
+      ErrorResult <- tryCatch({
+        gm <- mvnormalmixEM(x = row_data[, c(one_numerical_feature, two_numerical_feature)], 
+                            k = 3, 
+                            maxit = 100000)
+        
+        draw_mixture_model_plot_2d_2(mixture_model = gm,
+                                     two_column = c(one_numerical_feature, two_numerical_feature))
+        mixture_model_result_2D_2[[paste(one_numerical_feature, two_numerical_feature, sep = "-")]] <- 
+          c(gm$mu[[1]][1], gm$mu[[1]][2], gm$sigma[[1]][1], gm$sigma[[1]][2], gm$lambda[1],
+            gm$mu[[2]][1], gm$mu[[2]][2], gm$sigma[[2]][1], gm$sigma[[2]][2], gm$lambda[2],
+            gm$mu[[3]][1], gm$mu[[3]][2], gm$sigma[[3]][1], gm$sigma[[3]][2], gm$lambda[3])
+      }, error = function(err){
+        print(paste(paste(one_numerical_feature, two_numerical_feature, sep = "-"), "K = 3 is Error"))
+      })
+    }
+  }
+}
+
 ###########################
-
-
-###########################
-
-# AutoML via h2o
-###########################
-
-
-
-###########################
-
-# Mixed Model
-###########################
-
-
-
-
-###########################
-
 
